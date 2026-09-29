@@ -1,6 +1,7 @@
-# GitHub Repository Automation & Reporting
+# Repo Radar 📡
 
-A lightweight, production-style Python CLI that reads a list of GitHub
+**GitHub Repository Automation & Reporting** — a lightweight, production-style
+Python CLI that reads a list of GitHub
 `owner/repository` pairs from a CSV file, fetches live repository metadata
 from the GitHub REST API, and writes structured **CSV + JSON** reports.
 
@@ -63,8 +64,8 @@ CSV input ──► validate ──► GitHub REST API (timeout / retry / backof
 ## Installation
 
 ```bash
-git clone https://github.com/<your-account>/github-repo-automation-reporting.git
-cd github-repo-automation-reporting
+git clone https://github.com/<your-account>/repo-radar.git
+cd repo-radar
 
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate

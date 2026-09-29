@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="github-repo-reporting",
+        prog="repo-radar",
         description=(
             "Fetch GitHub repository metadata for a CSV list of owner/repository "
             "pairs and write CSV + JSON reports."

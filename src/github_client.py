@@ -54,7 +54,7 @@ class GitHubClient:
             {
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "github-repo-automation-reporting/1.0",
+                "User-Agent": "repo-radar/1.0",
             }
         )
         if token:

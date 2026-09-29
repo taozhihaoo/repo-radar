@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import REPORT_COLUMNS, RepoReport
@@ -30,10 +30,12 @@ def write_json(reports: list[RepoReport], path: str | Path) -> Path:
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     document = {
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "total": len(reports),
         "repositories": [report.to_dict() for report in reports],
     }
-    file_path.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    file_path.write_text(
+        json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     logger.info("JSON report written to %s (%d records)", file_path, len(reports))
     return file_path

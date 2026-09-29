@@ -1,2 +1,5 @@
+# Runtime + development dependencies (mirrors [project.optional-dependencies].dev).
+# Preferred install: pip install -e ".[dev]"
 requests>=2.31.0
 pytest>=8.0.0
+ruff>=0.6.0

@@ -4,6 +4,12 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.pytest-tmp/
+
+# Packaging / build artifacts
+*.egg-info/
+build/
+dist/
 
 # Generated reports
 output/

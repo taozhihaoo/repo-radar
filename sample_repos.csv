@@ -5,4 +5,6 @@ pytest-dev,pytest
 encode,httpx
 fastapi,fastapi
 python,cpython
+django,django
+pandas-dev,pandas
 this-owner-does-not-exist-xyz987,not-a-real-repo

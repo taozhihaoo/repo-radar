@@ -23,7 +23,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "requests>=2.31.0",
+    "requests>=2.34.2",
 ]
 
 [project.optional-dependencies]

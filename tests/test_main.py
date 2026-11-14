@@ -34,7 +34,8 @@ def test_failures_are_recorded_not_raised():
     )
 
     reports = fetch_reports(
-        make_requests("psf/requests", "nope/missing"), client  # type: ignore[arg-type]
+        make_requests("psf/requests", "nope/missing"),
+        client,  # type: ignore[arg-type]
     )
 
     assert [r.status for r in reports] == ["ok", "not_found"]

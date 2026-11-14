@@ -4,14 +4,51 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Least privilege: the workflow only reads the repository.
+permissions:
+  contents: read
+
+# Superseded runs on the same ref are cancelled to keep the queue short.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
-  test:
+  lint:
+    name: Static checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dev tooling
+        run: pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: ruff format --check .
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,13 +61,51 @@ jobs:
       - name: Install package and dev tools
         run: pip install -e ".[dev]"
 
-      - name: Static checks (ruff)
-        run: ruff check .
-
       - name: Unit tests (offline, no GitHub API access)
-        run: pytest -v
+        run: pytest -q --cov=src --cov-report=term-missing --cov-fail-under=90
 
       - name: CLI smoke checks
         run: |
           python -m src.main --help > /dev/null
           repo-radar --help > /dev/null
+
+      - name: End-to-end run with a stubbed HTTP layer
+        run: python scripts/smoke_run.py
+
+  package:
+    name: Package build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build
+          python -m build
+
+      - name: Verify the wheel ships the HTML template
+        run: |
+          python - <<'PY'
+          import glob
+          import sys
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          required = "src/templates/dashboard.html"
+          if required not in names:
+              sys.exit(f"{required} is missing from {wheel}")
+          print(f"ok: {required} is packaged in {wheel}")
+          PY
+
+      - name: Install the wheel and run the console script
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          /tmp/venv/bin/repo-radar --help > /dev/null

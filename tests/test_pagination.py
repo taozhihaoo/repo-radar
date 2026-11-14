@@ -18,9 +18,7 @@ def page_source(pages: dict[int, tuple[tuple, int | None]]) -> tuple:
 
 
 def test_yields_all_items_across_pages_in_order():
-    fetch_page, calls = page_source(
-        {1: (("a", "b"), 2), 2: (("c",), 3), 3: (("d", "e"), None)}
-    )
+    fetch_page, calls = page_source({1: (("a", "b"), 2), 2: (("c",), 3), 3: (("d", "e"), None)})
 
     items = list(paginate(fetch_page))
 
@@ -42,9 +40,7 @@ def test_empty_pages_terminate_cleanly():
 
 
 def test_max_pages_caps_number_of_fetches():
-    fetch_page, calls = page_source(
-        {1: (("a",), 2), 2: (("b",), 3), 3: (("c",), None)}
-    )
+    fetch_page, calls = page_source({1: (("a",), 2), 2: (("b",), 3), 3: (("c",), None)})
 
     items = list(paginate(fetch_page, max_pages=2))
 

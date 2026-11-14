@@ -9,7 +9,7 @@ import logging
 import pytest
 
 import src.main as main_module
-from src.main import main, parse_args
+from src.main import main, parse_args, selected_formats
 
 
 def write_input_csv(tmp_path, content="owner,repository\npsf,requests\npallets,flask\n"):
@@ -26,6 +26,7 @@ class FakeClient:
         self._behaviour = behaviour
         self.kwargs = kwargs
         self.calls: list[str] = []
+        self.closed = False
 
     def get_repository(self, owner: str, repository: str) -> dict:
         full_name = f"{owner}/{repository}"
@@ -34,6 +35,9 @@ class FakeClient:
         if isinstance(result, Exception):
             raise result
         return result
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def install_fake_client(monkeypatch, behaviour):
@@ -44,6 +48,7 @@ def install_fake_client(monkeypatch, behaviour):
 
 
 # --- parse_args -------------------------------------------------------------------
+
 
 def test_positional_input_and_defaults():
     args = parse_args(["repos.csv"])
@@ -77,14 +82,34 @@ def test_output_format_rejects_unknown_values():
 
 
 def test_numeric_options_are_parsed():
-    args = parse_args(
-        ["repos.csv", "--workers", "8", "--timeout", "2.5", "--max-retries", "5"]
-    )
+    args = parse_args(["repos.csv", "--workers", "8", "--timeout", "2.5", "--max-retries", "5"])
     assert (args.workers, args.timeout, args.max_retries) == (8, 2.5, 5)
 
 
 def test_verbose_flag():
     assert parse_args(["repos.csv", "-v"]).verbose is True
+
+
+def test_language_defaults_to_english_and_is_selectable():
+    assert parse_args(["repos.csv"]).lang == "en"
+    assert parse_args(["repos.csv", "--lang", "zh"]).lang == "zh"
+
+
+def test_unknown_language_rejected():
+    with pytest.raises(SystemExit, match="2"):
+        parse_args(["repos.csv", "--lang", "fr"])
+
+
+def test_no_color_flag():
+    assert parse_args(["repos.csv"]).no_color is False
+    assert parse_args(["repos.csv", "--no-color"]).no_color is True
+
+
+def test_selected_formats_expands_shorthands():
+    assert selected_formats("csv") == ("csv",)
+    assert selected_formats("html") == ("html",)
+    assert selected_formats("both") == ("csv", "json")
+    assert selected_formats("all") == ("csv", "json", "html")
 
 
 def test_help_mentions_repo_radar_and_workers(capsys):
@@ -98,6 +123,7 @@ def test_help_mentions_repo_radar_and_workers(capsys):
 
 
 # --- end-to-end main() with a fake client -------------------------------------------
+
 
 def test_main_happy_path_writes_both_reports(tmp_path, monkeypatch):
     input_csv = write_input_csv(tmp_path)
@@ -124,9 +150,7 @@ def test_main_output_format_csv_writes_only_csv(tmp_path, monkeypatch):
     install_fake_client(monkeypatch, {"psf/requests": {"stargazers_count": 1}})
     output_dir = tmp_path / "reports"
 
-    exit_code = main(
-        [str(input_csv), "--output-dir", str(output_dir), "--output-format", "csv"]
-    )
+    exit_code = main([str(input_csv), "--output-dir", str(output_dir), "--output-format", "csv"])
 
     assert exit_code == 0
     assert (output_dir / "repository_report.csv").exists()
@@ -138,13 +162,69 @@ def test_main_output_format_json_writes_only_json(tmp_path, monkeypatch):
     install_fake_client(monkeypatch, {"psf/requests": {"stargazers_count": 1}})
     output_dir = tmp_path / "reports"
 
-    exit_code = main(
-        [str(input_csv), "--output-dir", str(output_dir), "--output-format", "json"]
-    )
+    exit_code = main([str(input_csv), "--output-dir", str(output_dir), "--output-format", "json"])
 
     assert exit_code == 0
     assert not (output_dir / "repository_report.csv").exists()
     assert (output_dir / "repository_report.json").exists()
+
+
+def test_main_output_format_html_writes_only_html(tmp_path, monkeypatch):
+    input_csv = write_input_csv(tmp_path)
+    install_fake_client(monkeypatch, {"psf/requests": {"stargazers_count": 1}})
+    output_dir = tmp_path / "reports"
+
+    exit_code = main([str(input_csv), "--output-dir", str(output_dir), "--output-format", "html"])
+
+    assert exit_code == 0
+    html = (output_dir / "repository_report.html").read_text(encoding="utf-8")
+    assert html.startswith("<!doctype html>")
+    assert "const DATA = {" in html
+    assert not (output_dir / "repository_report.csv").exists()
+    assert not (output_dir / "repository_report.json").exists()
+
+
+def test_main_output_format_all_writes_three_reports(tmp_path, monkeypatch):
+    input_csv = write_input_csv(tmp_path)
+    install_fake_client(monkeypatch, {"psf/requests": {"stargazers_count": 1}})
+    output_dir = tmp_path / "reports"
+
+    exit_code = main(
+        [str(input_csv), "--output-dir", str(output_dir), "--output-format", "all", "--lang", "zh"]
+    )
+
+    assert exit_code == 0
+    for name in ("repository_report.csv", "repository_report.json", "repository_report.html"):
+        assert (output_dir / name).exists()
+    html = (output_dir / "repository_report.html").read_text(encoding="utf-8")
+    assert '"lang":"zh"' in html
+
+
+def test_main_unwritable_output_dir_exits_2(tmp_path, monkeypatch):
+    input_csv = write_input_csv(tmp_path)
+    install_fake_client(monkeypatch, {"psf/requests": {"stargazers_count": 1}})
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("occupied", encoding="utf-8")
+
+    exit_code = main([str(input_csv), "--output-dir", str(blocked), "--workers", "1"])
+
+    assert exit_code == 2
+
+
+def test_main_closes_the_client(tmp_path, monkeypatch):
+    input_csv = write_input_csv(tmp_path)
+    created = []
+
+    def factory(**kwargs):
+        client = FakeClient({"psf/requests": {"stargazers_count": 1}}, **kwargs)
+        created.append(client)
+        return client
+
+    monkeypatch.setattr(main_module, "GitHubClient", factory)
+
+    main([str(input_csv), "--output-dir", str(tmp_path / "out"), "--workers", "1"])
+
+    assert created and created[0].closed is True
 
 
 def test_main_concurrent_default_workers_keep_order(tmp_path, monkeypatch):
@@ -169,9 +249,7 @@ def test_main_all_failures_exit_code_1(tmp_path, monkeypatch):
     input_csv = write_input_csv(tmp_path, "owner,repository\nnope,missing\n")
     install_fake_client(monkeypatch, {"nope/missing": Exception("repository not found (HTTP 404)")})
 
-    exit_code = main(
-        [str(input_csv), "--output-dir", str(tmp_path / "out"), "--workers", "1"]
-    )
+    exit_code = main([str(input_csv), "--output-dir", str(tmp_path / "out"), "--workers", "1"])
 
     assert exit_code == 1
 
@@ -227,10 +305,14 @@ def test_main_reports_settings_and_summary(tmp_path, monkeypatch, caplog):
 
 # --- packaging ----------------------------------------------------------------------
 
+
 def test_console_entry_point_is_declared():
     match = next(
-        (e for e in importlib.metadata.entry_points(group="console_scripts")
-         if e.name == "repo-radar"),
+        (
+            e
+            for e in importlib.metadata.entry_points(group="console_scripts")
+            if e.name == "repo-radar"
+        ),
         None,
     )
     if match is None:

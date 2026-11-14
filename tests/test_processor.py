@@ -73,6 +73,7 @@ def names(reports):
 
 # --- sequential mode -----------------------------------------------------------
 
+
 def test_sequential_records_every_outcome_in_input_order():
     client = FakeClient(
         {
@@ -106,6 +107,7 @@ def test_sequential_rate_limit_stops_the_run():
 
 
 # --- concurrent mode -------------------------------------------------------------
+
 
 def test_concurrent_results_keep_input_order_despite_completion_order():
     # Later items finish first; the report must still follow input order.
@@ -194,9 +196,7 @@ def test_sequential_and_concurrent_agree_on_results():
     concurrent = fetch_reports_concurrent(requests_list, FakeClient(behaviour), workers=3)
 
     assert names(sequential) == names(concurrent)
-    assert [(r.status, r.stars) for r in sequential] == [
-        (r.status, r.stars) for r in concurrent
-    ]
+    assert [(r.status, r.stars) for r in sequential] == [(r.status, r.stars) for r in concurrent]
 
 
 def test_concurrent_worker_count_is_capped_by_item_count():

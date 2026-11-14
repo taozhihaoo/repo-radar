@@ -3,7 +3,9 @@
 The processor depends only on the client's *interface* (``get_repository``
 plus its typed exceptions) -- never on ``requests`` or HTTP details. The
 client is injected by the caller, so tests substitute fake clients and the
-suite stays offline and deterministic.
+suite stays offline and deterministic. The interface is spelled out as a
+:class:`RepoClient` protocol instead of ``object`` so the contract is
+checkable and readable.
 
 Two execution modes share one per-item handler:
 
@@ -11,17 +13,19 @@ Two execution modes share one per-item handler:
   ``--workers 1``. On a rate limit the run stops; items after it are not
   fetched and do not appear in the report.
 - ``fetch_reports_concurrent`` -- bounded thread pool. Results are
-  re-assembled in input order regardless of completion order. On a rate
-  limit no new request is started; requests already in flight may finish,
-  and items never started are dropped from the report (the same visible
-  semantics as the sequential run).
+  re-assembled in input order regardless of completion order. At most
+  ``workers`` tasks are ever queued, so a rate limit really does stop new
+  work: nothing is submitted after the stop flag is set, requests already
+  in flight may finish, and items never started are dropped from the report
+  (the same visible semantics as the sequential run).
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from typing import Protocol
 
 from .github_client import GitHubAPIError, RateLimitError, RepositoryNotFoundError
 from .models import (
@@ -34,10 +38,20 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["RepoClient", "fetch_reports", "fetch_reports_concurrent"]
+
+
+class RepoClient(Protocol):
+    """The single capability the processor needs from a GitHub client."""
+
+    def get_repository(self, owner: str, repository: str) -> dict:
+        """Return the raw API payload for one repository."""
+        ...
+
 
 def _fetch_single(
     request: RepoRequest,
-    client: object,
+    client: RepoClient,
     stop_event: threading.Event,
     position: int,
     total: int,
@@ -54,7 +68,7 @@ def _fetch_single(
         return None
     logger.debug("[%d/%d] fetching %s", position, total, request.full_name)
     try:
-        payload = client.get_repository(request.owner, request.repository)  # type: ignore[attr-defined]
+        payload = client.get_repository(request.owner, request.repository)
     except RepositoryNotFoundError as exc:
         logger.warning("[%d/%d] %s: %s", position, total, request.full_name, exc)
         return RepoReport.failure(request, STATUS_NOT_FOUND, str(exc))
@@ -85,7 +99,7 @@ def _fetch_single(
         return RepoReport.success(request, payload)
 
 
-def fetch_reports(requests_list: list[RepoRequest], client: object) -> list[RepoReport]:
+def fetch_reports(requests_list: list[RepoRequest], client: RepoClient) -> list[RepoReport]:
     """Fetch every request sequentially; collect successes and failures."""
     stop_event = threading.Event()
     total = len(requests_list)
@@ -101,14 +115,15 @@ def fetch_reports(requests_list: list[RepoRequest], client: object) -> list[Repo
 
 def fetch_reports_concurrent(
     requests_list: list[RepoRequest],
-    client: object,
+    client: RepoClient,
     workers: int,
 ) -> list[RepoReport]:
     """Fetch with a bounded thread pool; results keep the input order.
 
-    At most ``workers`` requests are in flight at any moment -- the pool
-    size is capped by the number of items, and callers cap ``workers``
-    themselves (see config.MAX_WORKERS), so threads are never unbounded.
+    At most ``workers`` tasks are queued at any moment -- the pool size is
+    capped by the number of items, and callers cap ``workers`` themselves
+    (see config.MAX_WORKERS), so neither threads nor queued work are ever
+    unbounded.
     """
     stop_event = threading.Event()
     total = len(requests_list)
@@ -117,10 +132,23 @@ def fetch_reports_concurrent(
 
     results: list[RepoReport | None] = [None] * total
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="repo-radar") as pool:
-        futures = [
-            (index, pool.submit(_fetch_single, request, client, stop_event, index + 1, total))
-            for index, request in enumerate(requests_list)
-        ]
-        for index, future in futures:
+        pending: dict[Future[RepoReport | None], int] = {}
+        next_index = 0
+        while next_index < total and not stop_event.is_set():
+            while len(pending) < max_workers and next_index < total:
+                request = requests_list[next_index]
+                future = pool.submit(
+                    _fetch_single, request, client, stop_event, next_index + 1, total
+                )
+                pending[future] = next_index
+                next_index += 1
+            if not pending:
+                break
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                results[pending.pop(future)] = future.result()
+        # Drain whatever was already in flight when the stop flag was raised.
+        for future, index in pending.items():
             results[index] = future.result()
+
     return [row for row in results if row is not None]

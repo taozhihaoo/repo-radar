@@ -5,14 +5,24 @@ __pycache__/
 venv/
 .pytest_cache/
 .pytest-tmp/
+.ruff_cache/
 
 # Packaging / build artifacts
 *.egg-info/
 build/
 dist/
 
+# Test / coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Generated reports
 output/
 
 # Environment / secrets
 .env
+
+# Local tooling state (editor/assistant workspace data)
+.workbuddy/

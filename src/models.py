@@ -12,6 +12,10 @@ from datetime import UTC, datetime
 _OWNER_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 
+# Path segments that exist as URL navigation rather than as repository names;
+# they would be normalised away by the HTTP layer.
+_RESERVED_NAMES = frozenset({".", ".."})
+
 # Fetch states used in the reports.
 STATUS_OK = "ok"
 STATUS_NOT_FOUND = "not_found"
@@ -55,7 +59,7 @@ class RepoRequest:
     def __post_init__(self) -> None:
         if not _OWNER_PATTERN.match(self.owner):
             raise ValidationError(f"invalid GitHub owner name: {self.owner!r}")
-        if not _REPOSITORY_PATTERN.match(self.repository):
+        if not _REPOSITORY_PATTERN.match(self.repository) or self.repository in _RESERVED_NAMES:
             raise ValidationError(f"invalid GitHub repository name: {self.repository!r}")
 
     @property

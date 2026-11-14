@@ -21,6 +21,12 @@ REQUEST_TIMEOUT_SECONDS: float = 10.0
 MAX_RETRIES: int = 3
 RETRY_BACKOFF_SECONDS: float = 1.0  # base delay, doubles with each attempt
 
+# Upper bound for any single backoff sleep. A server may ask for a very long
+# Retry-After (a primary rate-limit window is an hour); sleeping that long
+# inside one invocation is never the intent of a batch CLI, so anything above
+# this cap is reported instead of waited out.
+MAX_RETRY_DELAY_SECONDS: float = 30.0
+
 # --- Concurrency -----------------------------------------------------------
 # 4 is deliberately conservative: unauthenticated GitHub access allows only
 # 60 requests/hour, so the rate limit -- not the thread pool -- is the real
@@ -32,6 +38,11 @@ MAX_WORKERS = 32
 OUTPUT_DIR = "output"
 OUTPUT_CSV_NAME = "repository_report.csv"
 OUTPUT_JSON_NAME = "repository_report.json"
+OUTPUT_HTML_NAME = "repository_report.html"
+
+# Languages the HTML report interface ships with.
+SUPPORTED_LANGUAGES = ("en", "zh")
+DEFAULT_LANGUAGE = "en"
 
 # --- Environment ------------------------------------------------------------
 TOKEN_ENV_VAR = "GITHUB_TOKEN"
@@ -147,8 +158,7 @@ def resolve_settings(
         resolved_workers = DEFAULT_WORKERS
     if resolved_workers < 1:
         raise ConfigError(
-            f"workers must be >= 1 (got {resolved_workers}; check --workers "
-            f"and {WORKERS_ENV_VAR})"
+            f"workers must be >= 1 (got {resolved_workers}; check --workers and {WORKERS_ENV_VAR})"
         )
     if resolved_workers > MAX_WORKERS:
         raise ConfigError(

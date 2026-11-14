@@ -3,8 +3,10 @@
 import csv
 import json
 
+import pytest
+
 from src.models import RepoReport, RepoRequest
-from src.report_writer import write_csv, write_json
+from src.report_writer import atomic_write, write_csv, write_json
 
 
 def sample_report() -> RepoReport:
@@ -49,3 +51,33 @@ def test_write_json_envelope(tmp_path):
     assert data["repositories"][0]["full_name"] == "psf/requests"
     assert data["repositories"][0]["stars"] == 50000
     assert "generated_at" in data
+
+
+def test_writes_are_atomic_and_leave_no_temporary_files(tmp_path):
+    write_csv([sample_report()], tmp_path / "report.csv")
+    write_json([sample_report()], tmp_path / "report.json")
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["report.csv", "report.json"]
+
+
+def test_existing_report_is_replaced(tmp_path):
+    target = tmp_path / "report.csv"
+    target.write_text("stale\n", encoding="utf-8")
+
+    write_csv([sample_report()], target)
+
+    assert "stale" not in target.read_text(encoding="utf-8")
+
+
+def test_failed_write_keeps_the_previous_report(tmp_path):
+    target = tmp_path / "report.csv"
+    target.write_text("previous run\n", encoding="utf-8")
+
+    def boom(_handle):
+        raise RuntimeError("disk full")
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        atomic_write(target, boom)
+
+    assert target.read_text(encoding="utf-8") == "previous run\n"
+    assert [p.name for p in tmp_path.iterdir()] == ["report.csv"]

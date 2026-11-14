@@ -59,3 +59,26 @@ def test_empty_file_raises(tmp_path):
 def test_header_only_file_is_valid_but_empty(tmp_path):
     path = write(tmp_path, "owner,repository\n")
     assert load_repositories(path) == []
+
+
+def test_header_names_are_matched_case_insensitively(tmp_path):
+    path = write(tmp_path, " Owner , REPOSITORY \npsf,requests\n")
+    assert [(r.owner, r.repository) for r in load_repositories(path)] == [("psf", "requests")]
+
+
+def test_extra_columns_are_ignored(tmp_path):
+    path = write(tmp_path, "owner,repository,notes\npsf,requests,keep this\n")
+    assert [(r.owner, r.repository) for r in load_repositories(path)] == [("psf", "requests")]
+
+
+def test_non_utf8_file_raises_format_error(tmp_path):
+    path = tmp_path / "latin1.csv"
+    path.write_bytes("owner,repository\npsf,répo\n".encode("latin-1"))
+
+    with pytest.raises(CSVFormatError, match="UTF-8"):
+        load_repositories(path)
+
+
+def test_dot_segments_are_rejected_as_invalid_rows(tmp_path):
+    path = write(tmp_path, "owner,repository\npsf,..\npsf,.\npsf,requests\n")
+    assert [(r.owner, r.repository) for r in load_repositories(path)] == [("psf", "requests")]

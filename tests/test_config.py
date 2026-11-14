@@ -6,6 +6,7 @@ from src import config
 
 # --- get_github_token -------------------------------------------------------
 
+
 def test_token_read_from_environment(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "tok-123")
     assert config.get_github_token() == "tok-123"
@@ -22,6 +23,7 @@ def test_empty_token_treated_as_absent(monkeypatch):
 
 
 # --- resolve_settings: precedence --------------------------------------------
+
 
 def test_defaults_used_when_nothing_set(monkeypatch):
     monkeypatch.delenv(config.TIMEOUT_ENV_VAR, raising=False)
@@ -64,6 +66,7 @@ def test_blank_environment_values_are_ignored(monkeypatch):
 
 # --- resolve_settings: validation ---------------------------------------------
 
+
 def test_non_positive_timeout_rejected_from_cli():
     with pytest.raises(config.ConfigError, match="timeout"):
         config.resolve_settings(timeout=0)
@@ -104,6 +107,7 @@ def test_workers_env_above_hard_cap_rejected(monkeypatch):
 
 
 # --- load_dotenv ---------------------------------------------------------------
+
 
 def test_load_dotenv_sets_missing_keys(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
